@@ -1,5 +1,4 @@
 # Load required libraries
-library(caret)
 library(randomForest)   # For randomForest algorithm
 library(xgboost)        # For XGBoost algorithm
 # ... other libraries for other algorithms you choose
@@ -13,17 +12,40 @@ train_data <- data[train_index, ]
 test_data <- data[-train_index, ]
 
 # Step 2: Choose Algorithms
-algorithms <- c("glm", "randomForest", "xgbTree", "svmRadial")
+algorithms <- c("glm", "xgboost", "svmRadial")
 
 # Step 3: Model Training
-models <- lapply(algorithms, function(algo) {
-  train(
-    outcome ~ .,                 # Replace . with the appropriate formula
-    data = train_data,
-    method = algo,               # Algorithm name from 'algorithms'
-    trControl = trainControl(method = "cv", number = 5)   # Cross-validation for tuning
-  )
-})
+models <- list()
+
+# Logistic Regression
+models[["Logistic Regression"]] <- train(
+  outcome ~ .,
+  data = train_data,
+  method = "glm",
+  trControl = trainControl(method = "cv", number = 5)
+)
+
+# Random Forest
+models[["Random Forest"]] <- randomForest(
+  outcome ~ .,
+  data = train_data
+)
+
+# XGBoost
+models[["XGBoost"]] <- xgboost(
+  data = as.matrix(train_data[,-which(names(train_data)=="outcome")]), 
+  label = train_data$outcome,
+  nrounds = 10,
+  verbose = 0
+)
+
+# SVM
+models[["SVM"]] <- train(
+  outcome ~ .,
+  data = train_data,
+  method = "svmRadial",
+  trControl = trainControl(method = "cv", number = 5)
+)
 
 # Step 4: Model Evaluation
 accuracy <- sapply(models, function(model) {
@@ -32,42 +54,36 @@ accuracy <- sapply(models, function(model) {
 })
 
 # Step 5: Feature Importance (for Random Forest and XGBoost)
-rf_model <- models[[2]]  # Assuming Random Forest is the second algorithm in the list
-rf_feature_importance <- varImp(rf_model)   # Random Forest feature importance
-xgb_model <- models[[3]] # Assuming XGBoost is the third algorithm in the list
-xgb_feature_importance <- xgb.importance(model = xgb_model)   # XGBoost feature importance
+rf_feature_importance <- importance(models[["Random Forest"]])
+xgb_feature_importance <- xgb.importance(model = models[["XGBoost"]])$Feature
 
 # Step 6: Logistic Regression and SVM
-logreg_model <- models[[1]]   # Assuming Logistic Regression is the first algorithm in the list
-svm_model <- models[[4]]      # Assuming SVM is the fourth algorithm in the list
+logreg_variable_importance <- abs(coef(models[["Logistic Regression"]]))
+svm_variable_importance <- abs(coef(models[["SVM"]]))
 
-# Step 7: Calculate variable importance for Logistic Regression and SVM
-logreg_variable_importance <- abs(coef(logreg_model))
-svm_variable_importance <- abs(coef(svm_model))
-
-# Step 8: Create tables for variable importance
+# Step 7: Create tables for variable importance
 logreg_table <- data.frame(
-  Variable = names(coef(logreg_model)),
+  Variable = names(coef(models[["Logistic Regression"]])),
   Importance = logreg_variable_importance
 )
 
 svm_table <- data.frame(
-  Variable = names(coef(svm_model)),
+  Variable = names(coef(models[["SVM"]])),
   Importance = svm_variable_importance
 )
 
-# Step 9: Merge Random Forest and XGBoost variable importance into tables
+# Step 8: Merge Random Forest and XGBoost variable importance into tables
 rf_table <- data.frame(
   Variable = rownames(rf_feature_importance),
-  Importance = rf_feature_importance$Overall
+  Importance = rf_feature_importance[, 1]
 )
 
 xgb_table <- data.frame(
-  Variable = rownames(xgb_feature_importance),
-  Importance = xgb_feature_importance$Feature.Importance
+  Variable = names(xgb_feature_importance),
+  Importance = xgb_feature_importance
 )
 
-# Step 10: Combine all the tables
+# Step 9: Combine all the tables
 all_variable_importance_table <- rbind(
   logreg_table,
   rf_table,
@@ -75,15 +91,15 @@ all_variable_importance_table <- rbind(
   svm_table
 )
 
-# Step 11: Create a table with accuracy results
+# Step 10: Create a table with accuracy results
 results_table <- data.frame(
-  Model = c("Logistic Regression", "Random Forest", "XGBoost", "SVM"),
+  Model = names(models),
   Accuracy = accuracy
 )
 
-# Step 12: Print the combined table sorted by importance
+# Step 11: Print the combined table sorted by importance
 sorted_table <- all_variable_importance_table[order(-all_variable_importance_table$Importance), ]
 print(sorted_table)
 
-# Step 13: Print the accuracy results table
+# Step 12: Print the accuracy results table
 print(results_table)
